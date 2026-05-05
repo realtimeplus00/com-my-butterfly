@@ -196,6 +196,77 @@
   #speech-bubble5::after{ content:''; position:absolute; bottom:-11px; left:50%; transform:translateX(-50%); border:6px solid transparent; border-top-color:var(--white); }
   #pet-emoji5{ font-size:58px; line-height:1; filter:drop-shadow(0 0 18px rgba(78,204,163,.7)); animation:float 3s ease-in-out infinite; }
 
+  /* ── 설정 버튼 & 패널 ── */
+  #settings-btn{
+    background:none; border:none; cursor:pointer;
+    font-family:'Jua',cursive; font-size:13px;
+    color:#93c5fd; letter-spacing:.5px;
+    padding:2px 4px;
+    -webkit-tap-highlight-color:rgba(0,0,0,0);
+    line-height:1; flex-shrink:0;
+  }
+  #settings-btn:active{ transform:scale(.88); }
+
+  #settings-overlay{
+    display:none; position:fixed; inset:0;
+    background:rgba(0,0,0,.45); z-index:8000;
+    align-items:flex-start; justify-content:center;
+    padding-top:60px;
+  }
+  #settings-overlay.open{ display:flex; }
+
+  #settings-panel{
+    background:#fff; border-radius:18px;
+    width:88%; max-width:340px;
+    box-shadow:0 8px 32px rgba(0,0,0,.35);
+    overflow:hidden; font-family:'Jua',cursive;
+  }
+  #settings-panel-header{
+    background:var(--accent); color:#fff;
+    padding:13px 18px; font-size:16px;
+    display:flex; align-items:center; gap:8px;
+    justify-content:space-between;
+  }
+  #settings-close-btn{
+    background:none; border:none; color:#fff;
+    font-size:20px; cursor:pointer; padding:0 4px;
+    line-height:1;
+  }
+  .settings-section{
+    border-bottom:1px solid #eee; padding:14px 18px;
+  }
+  .settings-section:last-child{ border-bottom:none; }
+  .settings-section-title{
+    font-size:13px; color:#888; margin-bottom:10px;
+  }
+  .settings-row{
+    display:flex; align-items:center; gap:8px; margin-bottom:8px;
+  }
+  .settings-row:last-child{ margin-bottom:0; }
+  .settings-label{
+    font-size:13px; color:#333; width:70px; flex-shrink:0;
+  }
+  .settings-input{
+    flex:1; min-width:0; max-width:130px;
+    border:1.5px solid #d0d0d0; border-radius:10px;
+    padding:7px 10px; font-family:'Jua',cursive; font-size:13px;
+    outline:none; color:#1a1a2e;
+  }
+  .settings-input:focus{ border-color:var(--accent); }
+  .settings-save-btn{
+    background:var(--accent); color:#fff; border:none;
+    border-radius:10px; padding:7px 16px;
+    font-family:'Jua',cursive; font-size:13px;
+    cursor:pointer; flex-shrink:0;
+  }
+  .settings-save-btn:active{ transform:scale(.93); }
+  #flower-rain-canvas{
+    position:fixed; inset:0; width:100%; height:100%;
+    pointer-events:none; z-index:9999;
+    opacity:0; transition:opacity 0.5s;
+  }
+  #flower-rain-canvas.active{ opacity:1; }
+
 
   /* ── 조이스틱 레이어 ── */
   #joystick-layer{
@@ -343,12 +414,13 @@
   #p2-greeting{ font-family:'Jua',cursive; font-size:17px; color:var(--yellow); text-align:center; min-height:26px; }
 
   #toast{
-    position:fixed; top:54px; left:50%; transform:translateX(-50%) translateY(-70px);
+    position:fixed; top:54px; left:50%; transform:translateX(-50%) translateY(-120px);
     background:var(--accent); color:#fff; font-family:'Jua',cursive;
     font-size:13px; padding:7px 18px; border-radius:28px;
-    transition:transform .3s; z-index:100; white-space:nowrap; pointer-events:none;
+    transition:transform .4s ease; z-index:100; white-space:nowrap; pointer-events:none;
   }
-  #toast.show{ transform:translateX(-50%) translateY(0); }
+  #toast.show{ transform:translateX(-50%) translateY(50px); }
+  #toast.hide-up{ transform:translateX(-50%) translateY(-120px); }
 
   /* ── 게임 스타일 커스텀 모달 ── */
   #game-modal-overlay{
@@ -469,7 +541,10 @@
 <div id="header">
   <div id="header-top">
     <div id="datetime">📅 --</div>
-    <div id="stage-badge">🥚 알</div>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <button id="settings-btn" onclick="openSettings()" title="설정">⚙️ 설정</button>
+      <div id="stage-badge">🥚 알</div>
+    </div>
   </div>
   <div id="header-bottom">
     <span id="weather-label">오늘 날씨</span>
@@ -722,10 +797,17 @@ function goPage(n){
       if(!S.bornDate){ S.bornDate=Date.now(); }
       resizeCanvas();
       updatePetInfo();
+      const prevStage = S.stage;
+      checkStage();
       setGreetingMessage(isFirstVisit);
       render();
       saveState();
-      setTimeout(()=>{ if(!qMsgTimer){ pickMsg(); render(); } }, 5000);
+      // 성장 첫날 축하 (이전 단계보다 올랐거나, lastCelebStage가 아직 현재 stage 미만인 경우)
+      if(S.stage > 0 && S.lastCelebStage !== S.stage){
+        setTimeout(()=> showGrowthCelebration(), 800);
+      } else {
+        setTimeout(()=>{ if(!qMsgTimer){ pickMsg(); render(); } }, 5000);
+      }
     },50);
   }
 }
@@ -883,12 +965,16 @@ function applyOfflineTime(saved){
     stage:0,bornAt:Date.now(),bornDate:null,
     food:100,clean:100,toilet:100,snack:100,
     health:100,happy:100,lastTick:Date.now(),
-    cooldowns:{},message:MSG.happy[0],sleeping:false
+    cooldowns:{},message:MSG.happy[0],sleeping:false,
+    starCount:0,
+    lastCelebStage:-1
   };
   if(saved){
     S=applyOfflineTime(saved);
     S.sleeping=false;    // 저장된 수면 상태 초기화 (재시작 시 깨어있는 상태로)
     S.playMessage=false; // 저장된 놀아주기 메시지 고정 초기화 (재시작 시 해제)
+    // 구버전 저장 데이터 호환: lastCelebStage 없으면 -1로 초기화
+    if(S.lastCelebStage === undefined) S.lastCelebStage = -1;
     try{
       const u=JSON.parse(localStorage.getItem(USER_KEY)||'{}');
       if(u.userNickname) userNickname=u.userNickname;
@@ -915,9 +1001,60 @@ function showGameModal(msg, onConfirm, onCancel){
   overlay.classList.add('show');
   const okBtn = document.getElementById('game-modal-ok');
   const cancelBtn = document.getElementById('game-modal-cancel');
+  okBtn.style.display = '';
+  cancelBtn.style.display = '';
   function close(){ overlay.classList.remove('show'); }
   okBtn.onclick = ()=>{ close(); if(onConfirm) onConfirm(); };
   cancelBtn.onclick = ()=>{ close(); if(onCancel) onCancel(); };
+}
+
+// 버튼 없이 3초 후 자동으로 닫히는 모달 (2·3웨이브용)
+// 오버레이를 쓰지 않고 별도 토스트형 박스로 표시 → 조이스틱 입력 차단 없음
+function showAutoModal(msg, onDone){
+  // 기존 autoModal 있으면 제거
+  const prev = document.getElementById('auto-modal-box');
+  if(prev) prev.remove();
+
+  const box = document.createElement('div');
+  box.id = 'auto-modal-box';
+  box.style.cssText = [
+    'position:fixed',
+    'top:50%',
+    'left:50%',
+    'transform:translate(-50%,-50%) scale(0.85)',
+    'background:#fff',
+    'border-radius:18px',
+    'padding:18px 24px 14px',
+    'max-width:300px',
+    'width:88%',
+    'box-shadow:0 8px 32px rgba(0,0,0,0.28)',
+    'font-family:Jua,cursive',
+    'font-size:16px',
+    'color:#1a1a2e',
+    'line-height:1.6',
+    'text-align:center',
+    'white-space:pre-line',
+    'z-index:9998',
+    'pointer-events:none',
+    'opacity:0',
+    'transition:opacity .18s, transform .18s',
+  ].join(';');
+  box.textContent = msg;
+  document.body.appendChild(box);
+
+  // 애니메이션 등장
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      box.style.opacity = '1';
+      box.style.transform = 'translate(-50%,-50%) scale(1)';
+    });
+  });
+
+  setTimeout(()=>{
+    box.style.opacity = '0';
+    box.style.transform = 'translate(-50%,-50%) scale(0.85)';
+    setTimeout(()=>{ box.remove(); if(onDone) onDone(); }, 200);
+  }, 3000);
 }
 
 window.portalDialogShown = false;
@@ -941,7 +1078,7 @@ function closePortalDialog(){
 
 // ── 4페이지 캔버스/물리 시스템 ──
 let canvas4, ctx4, animT4=0;
-let pet4State = { x:0.15, absY:0, vx:0, vy:0, isJumping:false, floor:1, wobble:0, wobbleV:0, walkPhase:0 };
+let pet4State = { x:0.15, absY:0, vx:0, vy:0, isJumping:false, floor:1, wobble:0, wobbleV:0, walkPhase:0, facing:1 };
 let joy4TouchId=null, joy4Dx=0;
 let jump4Exhausted=false, jump4Count=0, jump4CdTimer=null, jump4CdInterval=null;
 const FLOOR4_Y_RATIO = 0.84;
@@ -1076,11 +1213,11 @@ function updatePillbugs(){
         pillbugs[0].x = W - pillbugs[0].r * 0.5;
         if(pillbugs[1]) pillbugs[1].x = pillbugs[0].x + Math.abs(dx);
         pillbugWave2Warned = true;
-        showGameModal(
+        showAutoModal(
           '공벌레 친구도 나왔어요! 🐛🐛\n점프해서 피해주세요!',
-          ()=>{ pillbugPhase = 5; },
           ()=>{ pillbugPhase = 5; }
         );
+        setTimeout(()=>{ pillbugPhase = 5; }, 1000);
         return;
       }
     }
@@ -1099,11 +1236,11 @@ function updatePillbugs(){
         if(pillbugs[1]) pillbugs[1].x = pillbugs[0].x + Math.abs(d1);
         if(pillbugs[2]) pillbugs[2].x = pillbugs[0].x + Math.abs(d2);
         pillbugWave3Warned = true;
-        showGameModal(
+        showAutoModal(
           '이제 마지막 친구들이에요! 🐛🐛🐛\n세 마리가 나들이 중이에요.\n사이사이를 점프로 피해주세요!',
-          ()=>{ pillbugPhase = 7; },
           ()=>{ pillbugPhase = 7; }
         );
+        setTimeout(()=>{ pillbugPhase = 7; }, 1000);
         return;
       }
     }
@@ -1976,8 +2113,13 @@ function applyPet4Transform(){
   pet.style.left=left+'px';
   pet.style.top=top+'px';
   pet.style.marginTop='0';
-  pet.style.transform='rotate('+pet4State.wobble+'deg)';
+  if(pet4State.vx > 0.00003) pet4State.facing = -1;
+  else if(pet4State.vx < -0.00003) pet4State.facing = 1;
+  const flip4 = pet4State.facing || 1;
+  pet.style.transform='rotate('+pet4State.wobble+'deg) scaleX('+flip4+')';
   pet.style.transition='none';
+  const bubble4 = document.getElementById('speech-bubble4');
+  if(bubble4) bubble4.style.transform = 'scaleX('+flip4+')';
 }
 
 // ── 4페이지 조이스틱 ──
@@ -2036,6 +2178,7 @@ let pet5State = {
   floor: 'top',       // 'top'=위쪽 풀밭, 'bottom'=강 아래 풀밭
   onBridge: false,    // 다리 타고 내려가는 중
   bridgeProgress: 0,  // 다리 진행도 0~1
+  facing: 1,          // 1=오른쪽, -1=왼쪽
 };
 let joy5TouchId = null, joy5Dx = 0, joy5Dy = 0;
 const FLOOR5_Y_RATIO = 0.84;   // 기본 지면(왼쪽 풀밭, 오른쪽 풀밭)
@@ -2276,6 +2419,13 @@ function drawScene5(){
 
   // ── 풍뎅이 ──
   drawBeetle5(W, H);
+
+  // ── 나뭇가지 발판 ──
+  drawBranchPlatforms(W, H);
+
+  // ── 날아오는 풍뎅이 친구들 ──
+  updateCarriers(W, H);
+  drawCarriers(W, H);
 }
 
 function drawGrass5(W, H, isRainy){
@@ -2976,19 +3126,305 @@ function drawFish5(W, H){
 }
 
 let star5ToastShown = false; // 토스트 한 번만 표시
+let star5Visible = false;    // 별이 화면에 표시됐는지
+let star5Collected = false;  // 별 획득 여부 (이번 세션)
+let star5BubbleAutoHide = false; // 말풍선 자동 숨김 대기
+let beetle5FarewellShown = false; // 별 획득 후 풍뎅이 인사 한 번만
+let beetle5RevisitGreetShown = false; // 오늘 별 이미 획득 후 재방문 시 풍뎅이 인사 한 번만
+let page5ReenteredFromPage4 = false;  // 4페이지를 거쳐 5페이지에 재진입했는지 여부
+
+const STAR5_DATE_KEY = 'silkworm_star5_date'; // 오늘 별 획득 날짜 저장 키
+
+function getTodayDateStr(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function hasStar5Today(){
+  try { return localStorage.getItem(STAR5_DATE_KEY) === getTodayDateStr(); }
+  catch(_){ return false; }
+}
+
+function saveStar5Today(){
+  try { localStorage.setItem(STAR5_DATE_KEY, getTodayDateStr()); }
+  catch(_){}
+}
 
 // ── 풍뎅이 상태 ──
 const beetle5 = {
   visible: false,       // 등장 여부
-  x: 0.82,             // 화면 오른쪽
+  x: 0.78,             // 화면 오른쪽 (강 건너 아래 풀밭)
+  floor: 'bottom',     // 강 건너 아래쪽
   met: false,          // 주인공과 만났는지
 };
 let beetle5FadeIn = 0; // 0→1 페이드인
+
+// ── 풍뎅이 친구 나뭇가지 이벤트 ──
+const BRANCH_PLATFORMS = []; // { y: 0~1 비율, placed: bool }
+let branchEvent = {
+  active: false,      // 이벤트 진행 중
+  carriers: [],       // 날아다니는 풍뎅이들
+  nextCarrierTimer: null,
+  totalPlaced: 0,     // 지금까지 놓은 나뭇가지 수
+  done: false,
+};
+
+// 나뭇가지 발판 목표 Y 위치 (0~1, GROUND5_Y 위쪽 하늘)
+// 아래에서 위로 올라가는 계단식 (총 10개 발판)
+const PLAT_TARGETS = [
+  // [x비율, y비율]  - 5층 계단식 (1층=바닥 위, 5층=별 바로 아래)
+  // 1층 발판
+  [0.22, 0.62], [0.55, 0.62], [0.82, 0.62],
+  // 2층 발판
+  [0.12, 0.50], [0.42, 0.50], [0.72, 0.50],
+  // 3층 발판
+  [0.25, 0.38], [0.55, 0.38], [0.82, 0.38],
+  // 4층 발판
+  [0.15, 0.26], [0.45, 0.26], [0.72, 0.26],
+  // 5층 발판 (별 바로 아래)
+  [0.35, 0.15], [0.60, 0.15],
+];
+
+// 이벤트 시작
+function startBranchEvent(){
+  branchEvent.active = true;
+  branchEvent.carriers = [];
+  branchEvent.totalPlaced = 0;
+  branchEvent.done = false;
+  BRANCH_PLATFORMS.length = 0;
+  spawnCarrier();
+}
+
+function spawnCarrier(){
+  if(!branchEvent.active) return;
+  if(branchEvent.totalPlaced >= PLAT_TARGETS.length) return;
+
+  const idx = branchEvent.totalPlaced;
+  const [tx, ty] = PLAT_TARGETS[idx];
+
+  const carrier = {
+    x: 1.08,          // 오른쪽 바깥에서 시작
+    y: 0.15 + Math.random()*0.10, // 하늘 위쪽에서 진입
+    tx: tx,            // 목표 x
+    ty: ty,            // 목표 y
+    phase: 'fly-in',   // fly-in | place | fly-out | done
+    angle: 0,
+    wingPhase: 0,
+    branchAngle: 0.3,  // 나뭇가지 기울기
+    placed: false,
+    platIdx: idx,
+  };
+  branchEvent.carriers.push(carrier);
+}
+
+function updateCarriers(W, H){
+  if(!branchEvent.active) return;
+
+  for(let i = branchEvent.carriers.length - 1; i >= 0; i--){
+    const c = branchEvent.carriers[i];
+    c.wingPhase += 0.18;
+
+    if(c.phase === 'fly-in'){
+      // 목표 위치로 이동
+      const dx = c.tx - c.x;
+      const dy = c.ty - c.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const speed = 0.012;
+      if(dist < 0.025){
+        c.x = c.tx; c.y = c.ty;
+        c.phase = 'place';
+        c.placeTimer = 0;
+      } else {
+        c.x += (dx/dist) * speed;
+        c.y += (dy/dist) * speed;
+        c.angle = Math.atan2(dy, dx);
+      }
+    } else if(c.phase === 'place'){
+      // 나뭇가지 내려놓기 (1초 정지)
+      c.placeTimer = (c.placeTimer||0) + 1;
+      c.branchAngle *= 0.85; // 수평으로 눕히기
+      if(c.placeTimer > 40){
+        c.placed = true;
+        c.phase = 'fly-out';
+        // 발판 등록
+        BRANCH_PLATFORMS.push({ x: c.tx, y: c.ty, alpha: 0 });
+        branchEvent.totalPlaced++;
+        // 다음 풍뎅이 0.8초 후 등장
+        if(branchEvent.totalPlaced < PLAT_TARGETS.length){
+          setTimeout(spawnCarrier, 800);
+        } else {
+          branchEvent.done = true;
+        }
+      }
+    } else if(c.phase === 'fly-out'){
+      // 오른쪽으로 날아나가기
+      c.x += 0.015;
+      c.y -= 0.004;
+      c.angle = -0.3;
+      if(c.x > 1.15){
+        c.phase = 'done';
+        branchEvent.carriers.splice(i, 1);
+      }
+    }
+  }
+
+  // 발판 페이드인
+  for(const p of BRANCH_PLATFORMS){
+    p.alpha = Math.min(1, (p.alpha||0) + 0.04);
+  }
+}
+
+function drawCarriers(W, H){
+  if(!branchEvent.active) return;
+  const grY = H * GROUND5_Y;
+
+  for(const c of branchEvent.carriers){
+    const cx = W * c.x;
+    const cy = H * c.y;
+    ctx5.save();
+    ctx5.translate(cx, cy);
+
+    // ── 날개 (펄럭임) ──
+    const wingFlap = Math.sin(c.wingPhase) * 0.5;
+
+    // 위쪽 날개
+    ctx5.save();
+    ctx5.rotate(-0.3 + wingFlap);
+    const wingG1 = ctx5.createRadialGradient(-4,-8,0,-4,-8,14);
+    wingG1.addColorStop(0,'rgba(120,220,80,0.85)');
+    wingG1.addColorStop(0.5,'rgba(60,160,40,0.7)');
+    wingG1.addColorStop(1,'rgba(30,100,20,0.3)');
+    ctx5.fillStyle = wingG1;
+    ctx5.beginPath();
+    ctx5.ellipse(-4,-10,14,7,0.4,0,Math.PI*2);
+    ctx5.fill();
+    ctx5.restore();
+
+    // 아래쪽 날개
+    ctx5.save();
+    ctx5.rotate(0.2 - wingFlap*0.6);
+    const wingG2 = ctx5.createRadialGradient(4,-4,0,4,-4,11);
+    wingG2.addColorStop(0,'rgba(100,200,60,0.75)');
+    wingG2.addColorStop(1,'rgba(40,120,20,0.2)');
+    ctx5.fillStyle = wingG2;
+    ctx5.beginPath();
+    ctx5.ellipse(4,-6,11,5,0.6,0,Math.PI*2);
+    ctx5.fill();
+    ctx5.restore();
+
+    // ── 몸통 ──
+    const bG = ctx5.createRadialGradient(-3,-3,1,0,0,12);
+    bG.addColorStop(0,'#a8e060');
+    bG.addColorStop(0.4,'#3db34a');
+    bG.addColorStop(1,'#0d4a18');
+    ctx5.fillStyle = bG;
+    ctx5.beginPath();
+    ctx5.ellipse(0, 0, 11, 8, 0, 0, Math.PI*2);
+    ctx5.fill();
+
+    // 등딱지 광택
+    ctx5.fillStyle = 'rgba(200,255,180,0.4)';
+    ctx5.beginPath();
+    ctx5.ellipse(-3,-3,5,3,-0.3,0,Math.PI*2);
+    ctx5.fill();
+
+    // 머리
+    ctx5.fillStyle = '#1a6e22';
+    ctx5.beginPath();
+    ctx5.ellipse(-12, 0, 6, 5, 0, 0, Math.PI*2);
+    ctx5.fill();
+
+    // 눈
+    ctx5.fillStyle = '#fff';
+    ctx5.beginPath(); ctx5.arc(-13,-2,2.2,0,Math.PI*2); ctx5.fill();
+    ctx5.fillStyle = '#111';
+    ctx5.beginPath(); ctx5.arc(-12.5,-2,1.3,0,Math.PI*2); ctx5.fill();
+    ctx5.fillStyle = '#fff';
+    ctx5.beginPath(); ctx5.arc(-12,-3,0.6,0,Math.PI*2); ctx5.fill();
+
+    // ── 입에 문 나뭇가지 ──
+    if(!c.placed){
+      ctx5.save();
+      ctx5.rotate(c.branchAngle);
+      // 나뭇가지 메인
+      ctx5.strokeStyle = '#8B5E3C';
+      ctx5.lineWidth = 4;
+      ctx5.lineCap = 'round';
+      ctx5.beginPath();
+      ctx5.moveTo(-18, 4);
+      ctx5.lineTo(18, 4);
+      ctx5.stroke();
+      // 잔가지들
+      ctx5.lineWidth = 2;
+      ctx5.strokeStyle = '#A0734A';
+      [[-10,4],[-3,4],[6,4],[14,4]].forEach(([bx,by])=>{
+        ctx5.beginPath();
+        ctx5.moveTo(bx, by);
+        ctx5.lineTo(bx-4, by-7);
+        ctx5.stroke();
+        ctx5.beginPath();
+        ctx5.moveTo(bx, by);
+        ctx5.lineTo(bx+3, by-6);
+        ctx5.stroke();
+      });
+      ctx5.restore();
+    }
+
+    ctx5.restore();
+  }
+}
+
+function drawBranchPlatforms(W, H){
+  for(const p of BRANCH_PLATFORMS){
+    const px = W * p.x;
+    const py = H * p.y;
+    const alpha = p.alpha || 1;
+    ctx5.save();
+    ctx5.globalAlpha = alpha;
+
+    // 나뭇가지 발판 (긴 막대)
+    const pw = W * 0.14;
+    ctx5.strokeStyle = '#7a4a20';
+    ctx5.lineWidth = 6;
+    ctx5.lineCap = 'round';
+    ctx5.beginPath();
+    ctx5.moveTo(px - pw/2, py);
+    ctx5.lineTo(px + pw/2, py);
+    ctx5.stroke();
+
+    // 잔가지 장식
+    ctx5.lineWidth = 2.5;
+    ctx5.strokeStyle = '#9a6535';
+    [-pw*0.3, -pw*0.05, pw*0.2].forEach(ox=>{
+      ctx5.beginPath();
+      ctx5.moveTo(px+ox, py);
+      ctx5.lineTo(px+ox-5, py-8);
+      ctx5.stroke();
+      ctx5.beginPath();
+      ctx5.moveTo(px+ox, py);
+      ctx5.lineTo(px+ox+4, py-7);
+      ctx5.stroke();
+    });
+
+    // 발판 위 이끼/흙 느낌
+    ctx5.fillStyle = `rgba(80,160,40,${0.5*alpha})`;
+    ctx5.beginPath();
+    ctx5.ellipse(px, py-2, pw*0.42, 3, 0, 0, Math.PI*2);
+    ctx5.fill();
+
+    ctx5.restore();
+  }
+}
 
 function drawStar5(W, H){
   if(!canvas5||!ctx5) return;
   const elapsed = animT5 - page5EnterTime;
   if(elapsed < 10) return; // 10초 이전엔 표시 안 함
+
+  star5Visible = true; // 별이 표시됨
+
+  // 획득 시 별 그리기 안 함
+  if(star5Collected) return;
 
   // 딱 한 번만 토스트 메시지 표시
   if(!star5ToastShown){
@@ -3087,86 +3523,116 @@ function drawBeetle5(W, H){
   // 페이드인
   beetle5FadeIn = Math.min(beetle5FadeIn + 0.02, 1);
 
-  const grY = H * GROUND5_Y; // 풀밭 지면 Y
+  const grY = H * BOTTOM5_Y_RATIO; // 강 건너 아래 풀밭 지면 Y
   const cx = W * beetle5.x;
-  const cy = grY - 14; // 지면 위에 올려놓기
+  const cy = grY - 16; // 지면 위에 올려놓기
 
   ctx5.save();
   ctx5.globalAlpha = beetle5FadeIn;
 
-  // ── 몸통 (타원, 고동색) ──
-  const bw = 18, bh = 12;
-  const bodyG = ctx5.createRadialGradient(cx-3, cy-3, 1, cx, cy, bw);
-  bodyG.addColorStop(0, '#c07040');
-  bodyG.addColorStop(0.4, '#7a3a10');
-  bodyG.addColorStop(1, '#3a1500');
+  // ── 몸통 (타원, 녹색 광택 풍뎅이) ──
+  const bw = 20, bh = 14;
+  const bodyG = ctx5.createRadialGradient(cx-4, cy-4, 1, cx, cy, bw*1.1);
+  bodyG.addColorStop(0, '#a8e060');
+  bodyG.addColorStop(0.35, '#3db34a');
+  bodyG.addColorStop(0.75, '#1a7a2a');
+  bodyG.addColorStop(1, '#0d4a18');
   ctx5.fillStyle = bodyG;
   ctx5.beginPath();
   ctx5.ellipse(cx, cy, bw, bh, 0, 0, Math.PI*2);
   ctx5.fill();
 
-  // 등 무늬 (중앙선)
-  ctx5.strokeStyle = 'rgba(0,0,0,0.35)';
-  ctx5.lineWidth = 1.2;
+  // 등딱지 중앙선
+  ctx5.strokeStyle = 'rgba(0,60,10,0.45)';
+  ctx5.lineWidth = 1.4;
   ctx5.beginPath();
-  ctx5.moveTo(cx, cy - bh + 2);
-  ctx5.lineTo(cx, cy + bh - 2);
+  ctx5.moveTo(cx, cy - bh + 3);
+  ctx5.lineTo(cx, cy + bh - 3);
   ctx5.stroke();
 
-  // 등 무늬 (가로선 2개)
-  [-3, 3].forEach(dy=>{
+  // 등딱지 가로 무늬
+  ctx5.strokeStyle = 'rgba(0,80,15,0.3)';
+  ctx5.lineWidth = 1.0;
+  [-4, 3].forEach(dy=>{
     ctx5.beginPath();
-    ctx5.ellipse(cx, cy+dy, bw*0.75, bh*0.28, 0, 0, Math.PI*2);
+    ctx5.ellipse(cx, cy+dy, bw*0.65, bh*0.22, 0, 0, Math.PI*2);
     ctx5.stroke();
   });
 
-  // ── 머리 (작은 원) ──
-  ctx5.fillStyle = '#2a0e00';
+  // ── 광택 하이라이트 ──
+  const shine = ctx5.createRadialGradient(cx-5, cy-5, 0, cx-5, cy-5, bw*0.55);
+  shine.addColorStop(0, 'rgba(200,255,180,0.55)');
+  shine.addColorStop(1, 'rgba(200,255,180,0)');
+  ctx5.fillStyle = shine;
   ctx5.beginPath();
-  ctx5.ellipse(cx - bw + 4, cy, 6, 5, -0.2, 0, Math.PI*2);
+  ctx5.ellipse(cx-5, cy-5, bw*0.42, bh*0.32, -0.4, 0, Math.PI*2);
   ctx5.fill();
 
-  // 눈
-  ctx5.fillStyle = '#ffcc00';
+  // ── 머리 (둥글고 귀엽게) ──
+  const hx = cx - bw + 2;
+  const hy = cy;
+  ctx5.fillStyle = '#1a6e22';
   ctx5.beginPath();
-  ctx5.arc(cx - bw + 2, cy - 2, 1.5, 0, Math.PI*2);
+  ctx5.ellipse(hx, hy, 8, 7, -0.15, 0, Math.PI*2);
+  ctx5.fill();
+  ctx5.fillStyle = 'rgba(160,255,140,0.3)';
+  ctx5.beginPath();
+  ctx5.ellipse(hx-1, hy-2, 4, 3, -0.3, 0, Math.PI*2);
   ctx5.fill();
 
-  // ── 더듬이 ──
-  ctx5.strokeStyle = '#2a0e00';
-  ctx5.lineWidth = 1;
-  [[-2, -1],[-4, -1]].forEach(([ox,oy])=>{
+  // ── 눈 (크고 귀엽게) ──
+  ctx5.fillStyle = '#fff';
+  ctx5.beginPath();
+  ctx5.arc(hx - 1, hy - 2.5, 3.2, 0, Math.PI*2);
+  ctx5.fill();
+  ctx5.fillStyle = '#1a1a1a';
+  ctx5.beginPath();
+  ctx5.arc(hx - 0.5, hy - 2.5, 2, 0, Math.PI*2);
+  ctx5.fill();
+  ctx5.fillStyle = '#fff';
+  ctx5.beginPath();
+  ctx5.arc(hx + 0.5, hy - 3.5, 0.8, 0, Math.PI*2);
+  ctx5.fill();
+
+  // ── 더듬이 (귀엽고 동글동글) ──
+  ctx5.strokeStyle = '#1a5a20';
+  ctx5.lineWidth = 1.2;
+  [[-1, -1],[2, -1]].forEach(([ox,oy], i)=>{
+    const startX = hx - 2 + ox;
+    const startY = hy - 6;
+    const endX = hx - 8 + ox * 2.5;
+    const endY = hy - 17;
     ctx5.beginPath();
-    ctx5.moveTo(cx - bw + 4 + ox, cy - 5);
-    ctx5.quadraticCurveTo(cx - bw + ox*2, cy - 13, cx - bw + ox*2 - 2, cy - 16);
+    ctx5.moveTo(startX, startY);
+    ctx5.quadraticCurveTo(startX - 4, hy - 12, endX, endY);
     ctx5.stroke();
+    ctx5.fillStyle = '#2a8a30';
     ctx5.beginPath();
-    ctx5.arc(cx - bw + ox*2 - 2, cy - 16, 1.5, 0, Math.PI*2);
-    ctx5.fillStyle = '#2a0e00';
+    ctx5.arc(endX, endY, 2.5, 0, Math.PI*2);
+    ctx5.fill();
+    ctx5.fillStyle = 'rgba(160,255,140,0.6)';
+    ctx5.beginPath();
+    ctx5.arc(endX-0.5, endY-0.5, 1, 0, Math.PI*2);
     ctx5.fill();
   });
 
-  // ── 다리 (6개) ──
-  ctx5.strokeStyle = '#3a1500';
-  ctx5.lineWidth = 1.2;
-  [-6, 0, 6].forEach(dx=>{
-    // 왼쪽 다리
+  // ── 아래쪽 다리만 3쌍 (윗면 다리 없음) ──
+  ctx5.strokeStyle = '#1a5a20';
+  ctx5.lineWidth = 1.3;
+  [-7, 0, 7].forEach((dx, i)=>{
+    const legX = cx + dx;
+    const legStartY = cy + bh - 3;
+    const spread = [8, 7, 8][i];
+    const down = [9, 10, 9][i];
     ctx5.beginPath();
-    ctx5.moveTo(cx+dx, cy+bh-2);
-    ctx5.lineTo(cx+dx-6, cy+bh+7);
+    ctx5.moveTo(legX, legStartY);
+    ctx5.quadraticCurveTo(legX - spread*0.4, legStartY + down*0.5, legX - spread, legStartY + down);
     ctx5.stroke();
-    // 오른쪽 다리
     ctx5.beginPath();
-    ctx5.moveTo(cx+dx, cy-bh+2);
-    ctx5.lineTo(cx+dx-6, cy-bh-7);
+    ctx5.moveTo(legX, legStartY);
+    ctx5.quadraticCurveTo(legX + spread*0.4, legStartY + down*0.5, legX + spread, legStartY + down);
     ctx5.stroke();
   });
-
-  // 광택
-  ctx5.fillStyle = 'rgba(255,180,100,0.22)';
-  ctx5.beginPath();
-  ctx5.ellipse(cx-4, cy-4, bw*0.45, bh*0.3, -0.4, 0, Math.PI*2);
-  ctx5.fill();
 
   ctx5.restore();
 
@@ -3323,14 +3789,111 @@ function physics5Step(){
   if(pet5State.isJumping){
     pet5State.vy += GRAVITY5;
     pet5State.absY += pet5State.vy;
-    if(pet5State.vy > 0 && pet5State.absY >= currentGroundY){
+
+    // ── 나뭇가지 발판 착지 판정 ──
+    if(pet5State.vy > 0 && branchEvent.active && BRANCH_PLATFORMS.length > 0){
+      const petScreenX = pet5State.x;
+
+      // 현재 서 있던 발판(또는 지면)의 Y 기준 - 점프 전 위치
+      // 한 칸 위 발판만 허용: 현재 absY보다 위에 있는 발판 중 가장 가까운 것만
+      // 점프 시작 시 currentGroundY를 기록해두기
+      const currentFloorY = pet5State._jumpStartY !== undefined ? pet5State._jumpStartY : H * BOTTOM5_Y_RATIO;
+
+      // 현재보다 위에 있는 발판들 중, 착지 가능한(x 범위 내) 것들을 찾아 가장 가까운(Y값 큰) 것만 허용
+      let closestPlat = null;
+      let closestDist = Infinity;
+      for(const p of BRANCH_PLATFORMS){
+        const platY = H * p.y;
+        if(platY >= currentFloorY) continue; // 현재 층보다 아래는 무시
+        const platPx = W * p.x;
+        const petPx  = W * petScreenX;
+        const onPlatX = Math.abs(petPx - platPx) < W * 0.14 * 0.55;
+        if(onPlatX){
+          // 현재 층에서 가장 가까운 위쪽 발판 (Y값이 currentFloorY에 가장 가까운)
+          const dist = currentFloorY - platY;
+          if(dist < closestDist){
+            closestDist = dist;
+            closestPlat = p;
+          }
+        }
+      }
+
+      // 가장 가까운 위쪽 발판에만 착지
+      if(closestPlat){
+        const platY = H * closestPlat.y;
+        if(pet5State.absY >= platY - 6 && pet5State.absY <= platY + 10){
+          pet5State.absY = platY;
+          pet5State.vy = 0;
+          pet5State.isJumping = false;
+          pet5State.wobbleV += (Math.random()-0.5)*5;
+          pet5State._onPlatform = closestPlat;
+          pet5State._jumpStartY = undefined;
+        }
+      }
+    }
+
+    if(pet5State.isJumping && pet5State.vy > 0 && pet5State.absY >= currentGroundY){
       pet5State.absY = currentGroundY;
       pet5State.vy = 0;
       pet5State.isJumping = false;
       pet5State.wobbleV += (Math.random()-0.5)*5;
+      pet5State._onPlatform = null;
     }
+
+    // ── 별 충돌 감지 (하늘로 점프 중) ──
+    if(!star5Collected && star5Visible && branchEvent.active && !hasStar5Today()){
+      const starCX = W * 0.50;
+      const starCY = (W * 0.055) + 36; // drawStar5 위치
+      const petPxX = W * pet5State.x;
+      const petPxY = pet5State.absY;
+      const dist = Math.sqrt((petPxX - starCX)**2 + (petPxY - starCY)**2);
+      if(dist < W * 0.10){
+        star5Collected = true;
+        if(!S.starCount) S.starCount = 0;
+        S.starCount++;
+        saveStar5Today(); // 오늘 날짜 저장 (하루 1회 제한)
+        saveState();
+        // 주인공 멘트
+        const bubble = document.getElementById('bubble-text5');
+        const speechBubble = document.getElementById('speech-bubble5');
+        if(bubble && speechBubble){
+          bubble.textContent = '와! 진짜 별을 갖게 됐어요! 정말 고마워요~ ⭐';
+          speechBubble.style.visibility = 'visible';
+          // 1층(바닥)까지 내려오면 멘트 자동 제거
+          star5BubbleAutoHide = true;
+        }
+        // 별 획득 이펙트 토스트
+        showToast5('⭐ 별을 획득했어요! (총 ' + S.starCount + '개)');
+      }
+    }
+
   } else {
-    pet5State.absY = currentGroundY;
+    // 발판 위에 있을 때: 발판에서 벗어나면 떨어짐
+    if(pet5State._onPlatform){
+      const p = pet5State._onPlatform;
+      const platPx = W * p.x;
+      const platW  = W * 0.14;
+      const petPx  = W * pet5State.x;
+      if(Math.abs(petPx - platPx) > platW * 0.55){
+        // 발판 벗어남 → 중력 낙하
+        pet5State._jumpStartY = pet5State.absY;
+        pet5State.isJumping = true;
+        pet5State.vy = 0.5;
+        pet5State._onPlatform = null;
+      } else {
+        pet5State.absY = H * p.y;
+      }
+    } else {
+      pet5State.absY = currentGroundY;
+    }
+  }
+
+  // ── 별 말풍선 자동 숨김: 1층(bottom 지면)에 있을 때 ──
+  if(star5BubbleAutoHide && !pet5State.isJumping && !pet5State._onPlatform
+     && pet5State.floor === 'bottom'){
+    star5BubbleAutoHide = false;
+    const speechBubble = document.getElementById('speech-bubble5');
+    if(speechBubble) speechBubble.style.visibility = 'hidden';
   }
 
   // ── 흔들림 ──
@@ -3384,20 +3947,80 @@ function physics5Step(){
   }
 
   // ── 풍뎅이 만남 감지 ──
-  if(beetle5.visible && !beetle5.met && pet5State.floor === 'top' && !pet5State.isJumping){
+  if(beetle5.visible && !beetle5.met && pet5State.floor === 'bottom' && !pet5State.isJumping){
     const dist = Math.abs(pet5State.x - beetle5.x);
-    if(dist < 0.10){
+    if(dist < 0.12){
       beetle5.met = true;
-      // 주인공 말풍선
+      pet5State.vx = 0;
+
+      // 1단계: 주인공 말풍선 3초 보여주기
       const bubble = document.getElementById('bubble-text5');
-      if(bubble) bubble.textContent = '저 별을 갖고 싶어요~ ⭐';
-      // 풍뎅이 말풍선 표시
+      const speechBubble = document.getElementById('speech-bubble5');
+      if(bubble){
+        bubble.textContent = '저 별을 갖고 싶어요~ ⭐';
+        if(speechBubble) speechBubble.style.visibility = 'visible';
+      }
+
+      // 3초 후: 주인공 말풍선 숨기고 풍뎅이 첫 번째 말풍선 표시
+      setTimeout(()=>{
+        if(speechBubble) speechBubble.style.visibility = 'hidden';
+        const beetleBubble = document.getElementById('beetle5-bubble');
+        const beetleText   = document.getElementById('beetle5-bubble-text');
+        if(beetleBubble && beetleText){
+          // 1번째 풍뎅이 메시지: 잠깐만 기다려봐~
+          beetleText.textContent = '그래? 잠시 있어봐~ 🪲';
+          beetleBubble.style.display = 'flex';
+          beetleBubble.style.flexDirection = 'column';
+        }
+        // 3초 후: 두 번째 풍뎅이 메시지
+        setTimeout(()=>{
+          if(beetleText) beetleText.textContent = '내 친구들을 불러올게~ 🌟';
+          // 5초 후: 풍뎅이 말풍선 사라지고 친구들 날아오기 시작
+          setTimeout(()=>{
+            if(beetleBubble) beetleBubble.style.display = 'none';
+            if(speechBubble) speechBubble.style.visibility = 'visible';
+            startBranchEvent();
+          }, 5000);
+        }, 3000);
+      }, 3000);
+    }
+  }
+
+  // ── 별 획득 후 풍뎅이 재회 감지 (인사 말풍선) ──
+  if(star5Collected && beetle5.visible && !beetle5FarewellShown && pet5State.floor === 'bottom' && !pet5State.isJumping){
+    const dist = Math.abs(pet5State.x - beetle5.x);
+    if(dist < 0.12){
+      beetle5FarewellShown = true;
+      pet5State.vx = 0;
       const beetleBubble = document.getElementById('beetle5-bubble');
       const beetleText   = document.getElementById('beetle5-bubble-text');
       if(beetleBubble && beetleText){
-        beetleText.textContent = '그래? 잠시 있어봐~ 🪲';
+        beetleText.textContent = '이제 별을 얻었으니,\n소원을 빌으렴~ ✨\n잘 가~ 👋';
         beetleBubble.style.display = 'flex';
         beetleBubble.style.flexDirection = 'column';
+        // 5초 후 말풍선 사라짐
+        setTimeout(()=>{
+          if(beetleBubble) beetleBubble.style.display = 'none';
+        }, 5000);
+      }
+    }
+  }
+
+  // ── 오늘 별 이미 획득 + 4페이지 거쳐 재진입 → 풍뎅이 만나면 "내일 다시 와" 멘트 ──
+  if(page5ReenteredFromPage4 && hasStar5Today() && beetle5.visible && beetle5.met && !beetle5RevisitGreetShown && pet5State.floor === 'bottom' && !pet5State.isJumping){
+    const dist = Math.abs(pet5State.x - beetle5.x);
+    if(dist < 0.12){
+      beetle5RevisitGreetShown = true;
+      pet5State.vx = 0;
+      const beetleBubble = document.getElementById('beetle5-bubble');
+      const beetleText   = document.getElementById('beetle5-bubble-text');
+      if(beetleBubble && beetleText){
+        beetleText.textContent = '또 왔구나~ 반가워! 🪲\n오늘은 이제 별이 없네.\n내일 다시 와야겠구나~ 🌟';
+        beetleBubble.style.display = 'flex';
+        beetleBubble.style.flexDirection = 'column';
+        setTimeout(()=>{
+          if(beetleBubble) beetleBubble.style.display = 'none';
+        }, 5000);
       }
     }
   }
@@ -3416,8 +4039,15 @@ function applyPet5Transform(){
   pet.style.left=left+'px';
   pet.style.top=topPx+'px';
   pet.style.marginTop='0';
-  pet.style.transform='rotate('+pet5State.wobble+'deg)';
+  // 이동 방향에 따라 좌우 반전: vx>0(오른쪽)이면 scaleX(-1), vx<0(왼쪽)이면 scaleX(1)
+  if(pet5State.vx > 0.00003) pet5State.facing = -1;
+  else if(pet5State.vx < -0.00003) pet5State.facing = 1;
+  const flip = pet5State.facing || 1;
+  pet.style.transform='rotate('+pet5State.wobble+'deg) scaleX('+flip+')';
   pet.style.transition='none';
+  // 말풍선은 항상 정방향 유지 (글자 뒤집힘 방지)
+  const bubble = document.getElementById('speech-bubble5');
+  if(bubble) bubble.style.transform = 'scaleX('+flip+')';
 }
 
 function showPage5ReturnDialog(){
@@ -3437,6 +4067,7 @@ function showPage5ReturnDialog(){
 
 function exitPage5(){
   window.loop5Running = false;
+  page5ReenteredFromPage4 = true; // 4페이지를 거쳐 재진입 플래그 설정
   // 4페이지로 복귀
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page4').classList.add('active');
@@ -3485,8 +4116,8 @@ function init5Joystick(){
   window.addEventListener('mousemove',e=>{ if(!md5)return; const {cx,cy}=getJoy5Center(); updateKnob5(e.clientX-cx,e.clientY-cy); });
   window.addEventListener('mouseup',()=>{ if(md5){ md5=false; resetKnob5(); } });
 
-  jumpBtn5.addEventListener('touchstart',e=>{ e.preventDefault(); if(!pet5State.isJumping){ pet5State.vy=JUMP5_VY; pet5State.isJumping=true; } },{passive:false});
-  jumpBtn5.addEventListener('mousedown',()=>{ if(!pet5State.isJumping){ pet5State.vy=JUMP5_VY; pet5State.isJumping=true; } });
+  jumpBtn5.addEventListener('touchstart',e=>{ e.preventDefault(); if(!pet5State.isJumping){ pet5State._jumpStartY = pet5State.absY; pet5State.vy=JUMP5_VY; pet5State.isJumping=true; } },{passive:false});
+  jumpBtn5.addEventListener('mousedown',()=>{ if(!pet5State.isJumping){ pet5State._jumpStartY = pet5State.absY; pet5State.vy=JUMP5_VY; pet5State.isJumping=true; } });
 }
 
 window.exit5LeftShown = false;
@@ -3496,7 +4127,9 @@ window.bridge5Ascending = false;
 let page5EnterTime = 0; // 5페이지 진입 시각 (animT5 기준)
 
 function enterPage5(){
-  // 5페이지 초기화
+  const alreadyGotStarToday = hasStar5Today(); // 오늘 이미 별 획득했는지
+
+  // 5페이지 공통 초기화 (항상)
   pet5State.x = 0.14;
   pet5State.vx = 0; pet5State.vy = 0;
   pet5State.isJumping = false;
@@ -3516,7 +4149,6 @@ function enterPage5(){
   canvas5 = document.getElementById('scene-canvas5');
   ctx5 = canvas5.getContext('2d');
   resize5Canvas();
-  // 지면 높이 맞추기
   pet5State.absY = canvas5.height * GROUND5_Y;
 
   // 펫 이모지 동기화
@@ -3533,15 +4165,64 @@ function enterPage5(){
   // 루프 시작
   if(!window.loop5Running){
     window.loop5Running = true;
-    page5EnterTime = -1; // loop5 첫 프레임에서 animT5로 초기화
+    page5EnterTime = -1;
     requestAnimationFrame(loop5);
   } else {
-    page5EnterTime = -1; // 재진입 시 리셋
+    page5EnterTime = -1;
   }
-  star5ToastShown = false; // 재진입 시 토스트도 리셋
-  beetle5.visible = false; beetle5.met = false; beetle5FadeIn = 0;
-  const beetleBubble = document.getElementById('beetle5-bubble');
-  if(beetleBubble) beetleBubble.style.display = 'none';
+
+  if(alreadyGotStarToday){
+    // ── 오늘 이미 별 획득: 나뭇가지만 초기화, 풍뎅이 유지 ──
+    star5ToastShown = true;   // 별 관련 토스트 다시 안 띄움
+    star5Visible = false;     // 별 그리기 안 함 (하루 1회 제한)
+    star5Collected = true;    // 이미 획득된 상태로 유지
+    star5BubbleAutoHide = false;
+    beetle5FarewellShown = false;
+    beetle5RevisitGreetShown = false;
+    // 나뭇가지 발판 초기화
+    BRANCH_PLATFORMS.length = 0;
+    branchEvent.active = false;
+    branchEvent.carriers = [];
+    branchEvent.totalPlaced = 0;
+    branchEvent.done = false;
+    // 풍뎅이는 그대로 유지 (beetle5.visible, beetle5.met 건드리지 않음)
+    // 오늘 별을 이미 획득했으므로 풍뎅이는 반드시 등장해 있어야 함
+    if(!beetle5.visible){ beetle5.visible = true; beetle5FadeIn = 0; }
+    beetle5.met = true;
+    const beetleBubble = document.getElementById('beetle5-bubble');
+    if(beetleBubble) beetleBubble.style.display = 'none';
+    // 진입 후 안내 토스트 (3초)
+    setTimeout(()=>{
+      const el = document.getElementById('toast5');
+      if(!el) return;
+      el.textContent = '⭐ 하루에 한 번만 별이 뜨나봐요~';
+      el.style.opacity = '1';
+      el.style.transform = 'translateX(-50%) translateY(0)';
+      setTimeout(()=>{
+        el.style.opacity = '0';
+        el.style.transform = 'translateX(-50%) translateY(20px)';
+      }, 3000);
+    }, 1200);
+  } else {
+    // ── 오늘 별 미획득: 완전 초기화 ──
+    star5ToastShown = false;
+    star5Visible = false;
+    star5Collected = false;
+    star5BubbleAutoHide = false;
+    beetle5FarewellShown = false;
+    beetle5RevisitGreetShown = false;
+    page5ReenteredFromPage4 = false; // 새 진입이므로 재진입 플래그 초기화
+    beetle5.visible = false;
+    beetle5.met = false;
+    beetle5FadeIn = 0;
+    BRANCH_PLATFORMS.length = 0;
+    branchEvent.active = false;
+    branchEvent.carriers = [];
+    branchEvent.totalPlaced = 0;
+    branchEvent.done = false;
+    const beetleBubble = document.getElementById('beetle5-bubble');
+    if(beetleBubble) beetleBubble.style.display = 'none';
+  }
 
   setTimeout(()=>showToast5('👈 왼쪽 문으로 야외 복귀 | 🌉 다리 위에서 레버↓ 강 아래로!'), 1500);
 }
@@ -4675,12 +5356,154 @@ function drawScene(){
 function daysSince(){ return (Date.now()-S.bornAt)/86400000; }
 
 function checkStage(){
-  const d=daysSince(), thresh=[1,4,7];
-  if(S.stage<3&&d>=thresh[S.stage]&&S.health>20){
+  const visits = getVisitCount(); // 찾아온 날 기준
+  const thresh = [7, 27, 50];    // 알→애벌레: 7일, 애벌레→누에고치: 27일, 누에고치→나비: 50일
+  if(S.stage<3 && visits>=thresh[S.stage] && S.health>20){
     S.stage++;
     showToast('🎉 '+st().name+' 단계가 됐어요!');
     S.message=rand(S.stage===3?MSG.butterfly:MSG.happy);
   }
+}
+
+// ── 설정 패널 ──
+function openSettings(){
+  const overlay = document.getElementById('settings-overlay');
+  const nickInput = document.getElementById('settings-nickname-input');
+  const petInput  = document.getElementById('settings-petname-input');
+  if(nickInput) nickInput.value = userNickname || '';
+  if(petInput)  petInput.value  = userPetname  || '';
+  overlay.classList.add('open');
+}
+
+function closeSettings(){
+  document.getElementById('settings-overlay').classList.remove('open');
+}
+
+function onSettingsOverlayClick(e){
+  if(e.target === document.getElementById('settings-overlay')) closeSettings();
+}
+
+function saveSettingsNickname(){
+  const val = document.getElementById('settings-nickname-input').value.trim();
+  if(!val){ showToast('별칭을 입력해주세요!'); return; }
+  userNickname = val;
+  saveState();
+  updatePetInfo();
+  showToast('✅ 별칭이 "' + val + '"(으)로 변경됐어요!');
+}
+
+function saveSettingsPetname(){
+  const val = document.getElementById('settings-petname-input').value.trim();
+  if(!val){ showToast('나비 이름을 입력해주세요!'); return; }
+  userPetname = val;
+  saveState();
+  updatePetInfo();
+  showToast('✅ 나비 이름이 "' + val + '"(으)로 변경됐어요!');
+}
+(function initFlowerRain(){
+  const fc = document.getElementById('flower-rain-canvas');
+  if(!fc) return;
+  const fctx = fc.getContext('2d');
+  const PETALS = '🌸🌺🌼🌻💐🌷🍀✿'.split('');
+  let flowerPetals = [];
+  let flowerRainActive = false;
+  let flowerRainTimer = null;
+  let flowerRafId = null;
+
+  function resizeFlowerCanvas(){
+    fc.width = window.innerWidth;
+    fc.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resizeFlowerCanvas);
+  resizeFlowerCanvas();
+
+  function spawnPetal(){
+    return {
+      x: Math.random() * fc.width,
+      y: -30,
+      vy: 1.2 + Math.random() * 2.2,
+      vx: (Math.random() - 0.5) * 1.2,
+      rot: Math.random() * Math.PI * 2,
+      rotV: (Math.random() - 0.5) * 0.08,
+      size: 16 + Math.random() * 14,
+      emoji: PETALS[Math.floor(Math.random() * PETALS.length)],
+      alpha: 0.85 + Math.random() * 0.15,
+      swing: Math.random() * Math.PI * 2,
+      swingSpd: 0.03 + Math.random() * 0.03,
+    };
+  }
+
+  function drawFlowerRain(){
+    if(!flowerRainActive && flowerPetals.length === 0) return;
+    fctx.clearRect(0, 0, fc.width, fc.height);
+
+    // 비 내리는 동안만 새 꽃잎 생성
+    if(flowerRainActive && Math.random() < 0.55) flowerPetals.push(spawnPetal());
+
+    for(let i = flowerPetals.length - 1; i >= 0; i--){
+      const p = flowerPetals[i];
+      p.y += p.vy;
+      p.x += p.vx + Math.sin(p.swing) * 0.7;
+      p.swing += p.swingSpd;
+      p.rot += p.rotV;
+      fctx.save();
+      fctx.globalAlpha = p.alpha;
+      fctx.font = p.size + 'px serif';
+      fctx.translate(p.x, p.y);
+      fctx.rotate(p.rot);
+      fctx.fillText(p.emoji, -p.size/2, p.size/2);
+      fctx.restore();
+      if(p.y > fc.height + 40) flowerPetals.splice(i, 1);
+    }
+    flowerRafId = requestAnimationFrame(drawFlowerRain);
+  }
+
+  window.startFlowerRain = function(duration){
+    resizeFlowerCanvas();
+    flowerPetals = [];
+    flowerRainActive = true;
+    fc.classList.add('active');
+    if(flowerRafId) cancelAnimationFrame(flowerRafId);
+    drawFlowerRain();
+    clearTimeout(flowerRainTimer);
+    flowerRainTimer = setTimeout(()=>{
+      flowerRainActive = false;
+      fc.classList.remove('active');
+      // 남은 꽃잎은 자연스럽게 떨어지게 냅둠
+      setTimeout(()=>{ flowerPetals=[]; }, 3000);
+    }, duration || 5000);
+  };
+})();
+
+// ── 성장 축하 메시지 ──
+function showGrowthCelebration(){
+  if(S.lastCelebStage === S.stage) return; // 이미 축하한 단계
+  S.lastCelebStage = S.stage;
+  saveState();
+
+  const nick = userNickname || '주인';
+  const stageName = st().name; // 현재 단계 이름
+
+  // 말풍선에 축하 메시지 + 확인 버튼
+  const bubbleText = document.getElementById('bubble-text');
+  const bubbleConfirm = document.getElementById('bubble-confirm');
+  const speechBubble = document.getElementById('speech-bubble');
+  if(bubbleText) bubbleText.innerHTML =
+    `${nick} 님의 사랑으로<br>드디어 <b>${stageName}</b>가 되었어요!<br>고맙습니다!! 🎉`;
+  if(speechBubble) speechBubble.classList.add('q-mode');
+  if(bubbleConfirm){
+    bubbleConfirm.classList.add('show');
+    // 확인 버튼: 누르면 꽃비 멈추고 일반 모드 복귀
+    const _orig = bubbleConfirm.onclick;
+    bubbleConfirm.onclick = ()=>{
+      bubbleConfirm.onclick = _orig; // 원래 handler 복원
+      closeQDialog();
+    };
+  }
+  if(typeof qMsgTimer !== 'undefined') qMsgTimer = 'locked';
+
+  // 꽃비 5초
+  if(window.startFlowerRain) window.startFlowerRain(5000);
 }
 
 function tick(){
@@ -4994,8 +5817,16 @@ let toastTimer;
 
 function showToast(msg){
   const el=document.getElementById('toast');
-  el.textContent=msg; el.classList.add('show');
-  clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'),2500);
+  el.textContent=msg;
+  el.classList.remove('show','hide-up');
+  // 강제 리플로우로 애니메이션 재시작
+  void el.offsetWidth;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{
+    el.classList.remove('show');
+    el.classList.add('hide-up');
+  },2500);
 }
 
 // ═══════════════════════════════════════
@@ -5043,7 +5874,8 @@ document.getElementById('loc-btn').addEventListener('click', refreshWeather);
     if(offlineMin>=1){
       const h=Math.floor(offlineMin/60), m=offlineMin%60;
       const timeStr=h>0?`${h}시간 ${m>0?m+'분':''}`:`${m}분`;
-      setTimeout(()=>showToast(`⏰ ${timeStr} 동안 자리를 비웠어요! 상태를 확인해봐요~`),800);
+      const petN = userPetname || '친구';
+      setTimeout(()=>showToast(`🌿 ${petN}의 상태를 확인해봐요~`),800);
     }
   };
 })();
@@ -5122,6 +5954,7 @@ const PET_STATE = {
   walkPhase: 0,
   joyDx: 0,
   edgeTimer: 0,
+  facing: 1,      // 1=왼쪽(기본), -1=오른쪽
 };
 
 (function initJoystick(){
@@ -5355,8 +6188,13 @@ const PET_STATE = {
     pet.style.left      = left+'px';
     pet.style.top       = top+'px';
     pet.style.marginTop = '0';
-    pet.style.transform = 'rotate('+PET_STATE.wobble+'deg)';
+    if(PET_STATE.vx > 0.00003) PET_STATE.facing = -1;
+    else if(PET_STATE.vx < -0.00003) PET_STATE.facing = 1;
+    const flip3 = PET_STATE.facing || 1;
+    pet.style.transform = 'rotate('+PET_STATE.wobble+'deg) scaleX('+flip3+')';
     pet.style.transition= 'none';
+    const bubble3 = document.getElementById('speech-bubble');
+    if(bubble3) bubble3.style.transform = 'scaleX('+flip3+')';
   }
 
   // 초기 absY 설정 (첫 프레임 전에)
@@ -5383,5 +6221,30 @@ setInterval(()=>fetchWeatherByCoord(weatherCache.lat,weatherCache.lon,weatherCac
     </div>
   </div>
 </div>
+<!-- 설정 오버레이 -->
+<div id="settings-overlay" onclick="onSettingsOverlayClick(event)">
+  <div id="settings-panel">
+    <div id="settings-panel-header">
+      <span>⚙️ 설정</span>
+      <button id="settings-close-btn" onclick="closeSettings()">✕</button>
+    </div>
+    <div class="settings-section">
+      <div class="settings-section-title">🏷️ 이름 변경</div>
+      <div class="settings-row">
+        <span class="settings-label">내 별칭</span>
+        <input id="settings-nickname-input" class="settings-input" type="text" maxlength="10" placeholder="별칭 입력">
+        <button class="settings-save-btn" onclick="saveSettingsNickname()">변경</button>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">나비 이름</span>
+        <input id="settings-petname-input" class="settings-input" type="text" maxlength="10" placeholder="이름 입력">
+        <button class="settings-save-btn" onclick="saveSettingsPetname()">변경</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 꽃비 오버레이 캔버스 -->
+<canvas id="flower-rain-canvas"></canvas>
 </body>
 </html>
